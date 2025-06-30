@@ -23,7 +23,7 @@ pub struct KeypairData {
     pub secret: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[derive(Debug, Serialize, ToSchema)]
 #[serde(untagged)]
 pub enum ApiResponse<T> {
     Success { success: bool, data: T },
