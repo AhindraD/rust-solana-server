@@ -12,11 +12,24 @@ use spl_token::{
 use std::str::FromStr;
 use utoipa::ToSchema;
 
+// #[derive(Debug, Serialize, ToSchema)]
+// pub enum ApiResponse<T> {
+//     Success { success: bool, data: T },
+//     Error { success: bool, error: String },
+// }
+
 #[derive(Debug, Serialize, ToSchema)]
-pub enum ApiResponse<T> {
-    Success { success: bool, data: T },
-    Error { success: bool, error: String },
+pub struct SuccessResponse<T> {
+    pub success: bool,
+    pub data: T,
 }
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct ErrorResponse {
+    pub success: bool,
+    pub error: String,
+}
+
 #[derive(Debug, Serialize, ToSchema)]
 pub struct KeypairData {
     pub pubkey: String,
@@ -27,8 +40,8 @@ pub struct KeypairData {
     post,
     path = "/keypair",
     responses(
-        (status = 200, description = "Generated new keypair...", body = ApiResponse<KeypairData>),
-        (status = 400, description = "Keypair generation failed !")
+        (status = 200, description = "Generated new keypair...", body = SuccessResponse<KeypairData>),
+        (status = 400, description = "Keypair generation failed !", body = ErrorResponse)
     )
 )]
 pub async fn generate_keypair() -> impl IntoResponse {
@@ -36,7 +49,7 @@ pub async fn generate_keypair() -> impl IntoResponse {
         let keypair = Keypair::new();
         let pubkey = keypair.pubkey().to_string();
         let secret = bs58::encode(keypair.to_bytes()).into_string();
-        Ok(ApiResponse::Success {
+        Ok(SuccessResponse {
             success: true,
             data: KeypairData { pubkey, secret },
         })
@@ -46,7 +59,7 @@ pub async fn generate_keypair() -> impl IntoResponse {
         Ok(response) => (StatusCode::OK, Json(response)).into_response(),
         Err(err) => (
             StatusCode::BAD_REQUEST,
-            Json(ApiResponse::<()>::Error {
+            Json(ErrorResponse {
                 success: false,
                 error: err.to_string(),
             }),
@@ -81,14 +94,13 @@ pub struct CreateTokenResponse {
     path = "/token/create",
     request_body = CreateTokenRequest,
     responses(
-        (status = 200, description = "Created SPL token mint instruction...", body = ApiResponse<CreateTokenResponse>),
-        (status = 400, description = "Invalid pubkey or request!")
+        (status = 200, description = "Created SPL token mint instruction...", body = SuccessResponse<CreateTokenResponse>),
+        (status = 400, description = "Invalid pubkey or request!", body = ErrorResponse)
     )
 )]
 pub async fn create_token(Json(payload): Json<CreateTokenRequest>) -> impl IntoResponse {
-    let result: Result<ApiResponse<CreateTokenResponse>, String> = (|| {
+    let result: Result<SuccessResponse<CreateTokenResponse>, String> = (|| {
         let mint = Pubkey::from_str(&payload.mint).map_err(|_| "Invalid mint public key")?;
-
         let mint_authority = Pubkey::from_str(&payload.mint_authority)
             .map_err(|_| "Invalid mint authority public key")?;
 
@@ -114,7 +126,7 @@ pub async fn create_token(Json(payload): Json<CreateTokenRequest>) -> impl IntoR
             })
             .collect();
 
-        Ok(ApiResponse::Success {
+        Ok(SuccessResponse {
             success: true,
             data: CreateTokenResponse {
                 program_id: instruction.program_id.to_string(),
@@ -128,7 +140,7 @@ pub async fn create_token(Json(payload): Json<CreateTokenRequest>) -> impl IntoR
         Ok(response) => (StatusCode::OK, Json(response)).into_response(),
         Err(error) => (
             StatusCode::BAD_REQUEST,
-            Json(ApiResponse::<()>::Error {
+            Json(ErrorResponse {
                 success: false,
                 error,
             }),
@@ -157,12 +169,12 @@ pub struct TokenInstructionResponse {
     path = "/token/mint",
     request_body = MintTokenRequest,
     responses(
-        (status = 200, description = "Created SPL mint-to instruction", body = ApiResponse<TokenInstructionResponse>),
-        (status = 400, description = "Invalid request")
+        (status = 200, description = "Created SPL mint-to instruction", body = SuccessResponse<TokenInstructionResponse>),
+        (status = 400, description = "Invalid request", body = ErrorResponse)
     )
 )]
 pub async fn mint_token(Json(payload): Json<MintTokenRequest>) -> impl IntoResponse {
-    let result: Result<ApiResponse<TokenInstructionResponse>, String> = (|| {
+    let result: Result<SuccessResponse<TokenInstructionResponse>, String> = (|| {
         let mint = Pubkey::from_str(&payload.mint).map_err(|_| "Invalid mint pubkey")?;
         let dest =
             Pubkey::from_str(&payload.destination).map_err(|_| "Invalid destination pubkey")?;
@@ -191,7 +203,7 @@ pub async fn mint_token(Json(payload): Json<MintTokenRequest>) -> impl IntoRespo
 
         let encoded_data = general_purpose::STANDARD.encode(&instruction.data);
 
-        Ok(ApiResponse::Success {
+        Ok(SuccessResponse {
             success: true,
             data: TokenInstructionResponse {
                 program_id: instruction.program_id.to_string(),
@@ -205,7 +217,7 @@ pub async fn mint_token(Json(payload): Json<MintTokenRequest>) -> impl IntoRespo
         Ok(res) => (StatusCode::OK, Json(res)).into_response(),
         Err(err) => (
             StatusCode::BAD_REQUEST,
-            Json(ApiResponse::<()>::Error {
+            Json(ErrorResponse {
                 success: false,
                 error: err,
             }),
@@ -226,22 +238,22 @@ pub struct SignMessageResponse {
     pub public_key: String,
     pub message: String,
 }
+
 #[utoipa::path(
     post,
     path = "/message/sign",
     request_body = SignMessageRequest,
     responses(
-        (status = 200, description = "Message signed successfully", body = ApiResponse<SignMessageResponse>),
-        (status = 400, description = "Invalid input")
+        (status = 200, description = "Message signed successfully", body = SuccessResponse<SignMessageResponse>),
+        (status = 400, description = "Invalid input", body = ErrorResponse)
     )
 )]
 pub async fn sign_message(Json(payload): Json<SignMessageRequest>) -> impl IntoResponse {
-    let result: Result<ApiResponse<SignMessageResponse>, String> = (|| {
+    let result: Result<SuccessResponse<SignMessageResponse>, String> = (|| {
         if payload.message.trim().is_empty() || payload.secret.trim().is_empty() {
             return Err("Missing required fields".to_string());
         }
 
-        // Decode base58 secret key (64 bytes expected)
         let secret_bytes = bs58::decode(&payload.secret)
             .into_vec()
             .map_err(|_| "Invalid base58-encoded secret key")?;
@@ -252,7 +264,7 @@ pub async fn sign_message(Json(payload): Json<SignMessageRequest>) -> impl IntoR
         let signature = keypair.sign_message(payload.message.as_bytes());
         let signature_base64 = general_purpose::STANDARD.encode(signature.as_ref());
 
-        Ok(ApiResponse::Success {
+        Ok(SuccessResponse {
             success: true,
             data: SignMessageResponse {
                 signature: signature_base64,
@@ -266,7 +278,7 @@ pub async fn sign_message(Json(payload): Json<SignMessageRequest>) -> impl IntoR
         Ok(response) => (StatusCode::OK, Json(response)).into_response(),
         Err(error) => (
             StatusCode::BAD_REQUEST,
-            Json(ApiResponse::<()>::Error {
+            Json(ErrorResponse {
                 success: false,
                 error,
             }),
@@ -294,12 +306,12 @@ pub struct VerifyMessageResponse {
     path = "/message/verify",
     request_body = VerifyMessageRequest,
     responses(
-        (status = 200, description = "Verification result", body = ApiResponse<VerifyMessageResponse>),
-        (status = 400, description = "Invalid input")
+        (status = 200, description = "Verification result", body = SuccessResponse<VerifyMessageResponse>),
+        (status = 400, description = "Invalid input", body = ErrorResponse)
     )
 )]
 pub async fn verify_message(Json(payload): Json<VerifyMessageRequest>) -> impl IntoResponse {
-    let result: Result<ApiResponse<VerifyMessageResponse>, String> = (|| {
+    let result: Result<SuccessResponse<VerifyMessageResponse>, String> = (|| {
         let pubkey = Pubkey::from_str(&payload.pubkey).map_err(|_| "Invalid public key")?;
 
         let signature_bytes = general_purpose::STANDARD
@@ -311,7 +323,7 @@ pub async fn verify_message(Json(payload): Json<VerifyMessageRequest>) -> impl I
 
         let is_valid = signature.verify(pubkey.as_ref(), payload.message.as_bytes());
 
-        Ok(ApiResponse::Success {
+        Ok(SuccessResponse {
             success: true,
             data: VerifyMessageResponse {
                 valid: is_valid,
@@ -325,7 +337,7 @@ pub async fn verify_message(Json(payload): Json<VerifyMessageRequest>) -> impl I
         Ok(res) => (StatusCode::OK, Json(res)).into_response(),
         Err(err) => (
             StatusCode::BAD_REQUEST,
-            Json(ApiResponse::<()>::Error {
+            Json(ErrorResponse {
                 success: false,
                 error: err,
             }),
@@ -353,12 +365,12 @@ pub struct SendSolResponse {
     path = "/send/sol",
     request_body = SendSolRequest,
     responses(
-        (status = 200, description = "SOL transfer instruction", body = ApiResponse<SendSolResponse>),
-        (status = 400, description = "Invalid input")
+        (status = 200, description = "SOL transfer instruction", body = SuccessResponse<SendSolResponse>),
+        (status = 400, description = "Invalid input", body = ErrorResponse)
     )
 )]
 pub async fn send_sol(Json(payload): Json<SendSolRequest>) -> impl IntoResponse {
-    let result: Result<ApiResponse<SendSolResponse>, String> = (|| {
+    let result: Result<SuccessResponse<SendSolResponse>, String> = (|| {
         if payload.lamports == 0 {
             return Err("Lamports must be greater than 0".to_string());
         }
@@ -371,7 +383,7 @@ pub async fn send_sol(Json(payload): Json<SendSolRequest>) -> impl IntoResponse 
         let instruction =
             solana_sdk::system_instruction::transfer(&from_pubkey, &to_pubkey, payload.lamports);
 
-        Ok(ApiResponse::Success {
+        Ok(SuccessResponse {
             success: true,
             data: SendSolResponse {
                 program_id: instruction.program_id.to_string(),
@@ -389,7 +401,7 @@ pub async fn send_sol(Json(payload): Json<SendSolRequest>) -> impl IntoResponse 
         Ok(res) => (StatusCode::OK, Json(res)).into_response(),
         Err(err) => (
             StatusCode::BAD_REQUEST,
-            Json(ApiResponse::<()>::Error {
+            Json(ErrorResponse {
                 success: false,
                 error: err,
             }),
@@ -424,12 +436,12 @@ pub struct AccountInfo {
     path = "/send/token",
     request_body = SendTokenRequest,
     responses(
-        (status = 200, description = "SPL Token transfer instruction", body = ApiResponse<SendTokenResponse>),
-        (status = 400, description = "Invalid input")
+        (status = 200, description = "SPL Token transfer instruction", body = SuccessResponse<SendTokenResponse>),
+        (status = 400, description = "Invalid input", body = ErrorResponse)
     )
 )]
 pub async fn send_token(Json(payload): Json<SendTokenRequest>) -> impl IntoResponse {
-    let result: Result<ApiResponse<SendTokenResponse>, String> = (|| {
+    let result: Result<SuccessResponse<SendTokenResponse>, String> = (|| {
         let destination =
             Pubkey::from_str(&payload.destination).map_err(|_| "Invalid destination pubkey")?;
         let mint = Pubkey::from_str(&payload.mint).map_err(|_| "Invalid mint pubkey")?;
@@ -456,7 +468,7 @@ pub async fn send_token(Json(payload): Json<SendTokenRequest>) -> impl IntoRespo
 
         let instruction_data = general_purpose::STANDARD.encode(&instruction.data);
 
-        Ok(ApiResponse::Success {
+        Ok(SuccessResponse {
             success: true,
             data: SendTokenResponse {
                 program_id: instruction.program_id.to_string(),
@@ -470,7 +482,7 @@ pub async fn send_token(Json(payload): Json<SendTokenRequest>) -> impl IntoRespo
         Ok(response) => (StatusCode::OK, Json(response)).into_response(),
         Err(error) => (
             StatusCode::BAD_REQUEST,
-            Json(ApiResponse::<()>::Error {
+            Json(ErrorResponse {
                 success: false,
                 error,
             }),
