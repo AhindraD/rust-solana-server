@@ -19,7 +19,7 @@ use utoipa::ToSchema;
 // }
 
 #[derive(Debug, Serialize, ToSchema)]
-pub struct SuccessResponse<T> {
+pub struct SuccessResponse<T: ToSchema> {
     pub success: bool,
     pub data: T,
 }
