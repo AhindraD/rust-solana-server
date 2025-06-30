@@ -13,7 +13,6 @@ use std::str::FromStr;
 use utoipa::ToSchema;
 
 #[derive(Debug, Serialize, ToSchema)]
-#[serde(untagged)]
 pub enum ApiResponse<T> {
     Success { success: bool, data: T },
     Error { success: bool, error: String },
@@ -56,7 +55,7 @@ pub async fn generate_keypair() -> impl IntoResponse {
     }
 }
 
-#[derive(Debug, Deserialize, Serialize, ToSchema)]
+#[derive(Debug, Deserialize, ToSchema)]
 pub struct CreateTokenRequest {
     pub mint: String,
     pub mint_authority: String,
