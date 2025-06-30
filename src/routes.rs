@@ -1,18 +1,13 @@
-use axum::{
-    extract::{Json, Path},
-    http::StatusCode,
-    response::IntoResponse,
-};
+use axum::{extract::Json, http::StatusCode, response::IntoResponse};
 use base64::{Engine as _, engine::general_purpose};
 use serde::{Deserialize, Serialize};
 use solana_sdk::{
     bs58,
     signature::{Keypair, Signature, Signer},
-    system_program,
 };
 use spl_token::{
     instruction::{initialize_mint, mint_to},
-    solana_program::{instruction::Instruction, pubkey::Pubkey},
+    solana_program::pubkey::Pubkey,
 };
 use std::str::FromStr;
 use utoipa::ToSchema;
@@ -323,6 +318,70 @@ pub async fn verify_message(Json(payload): Json<VerifyMessageRequest>) -> impl I
                 valid: is_valid,
                 message: payload.message.clone(),
                 pubkey: payload.pubkey.clone(),
+            },
+        })
+    })();
+
+    match result {
+        Ok(res) => (StatusCode::OK, Json(res)).into_response(),
+        Err(err) => (
+            StatusCode::BAD_REQUEST,
+            Json(ApiResponse::<()>::Error {
+                success: false,
+                error: err,
+            }),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct SendSolRequest {
+    pub from: String,
+    pub to: String,
+    pub lamports: u64,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct SendSolResponse {
+    pub program_id: String,
+    pub accounts: Vec<String>,
+    pub instruction_data: String,
+}
+
+#[utoipa::path(
+    post,
+    path = "/send/sol",
+    request_body = SendSolRequest,
+    responses(
+        (status = 200, description = "SOL transfer instruction", body = ApiResponse<SendSolResponse>),
+        (status = 400, description = "Invalid input")
+    )
+)]
+pub async fn send_sol(Json(payload): Json<SendSolRequest>) -> impl IntoResponse {
+    let result: Result<ApiResponse<SendSolResponse>, String> = (|| {
+        if payload.lamports == 0 {
+            return Err("Lamports must be greater than 0".to_string());
+        }
+
+        let from_pubkey = solana_sdk::pubkey::Pubkey::from_str(&payload.from)
+            .map_err(|_| "Invalid 'from' pubkey")?;
+        let to_pubkey =
+            solana_sdk::pubkey::Pubkey::from_str(&payload.to).map_err(|_| "Invalid 'to' pubkey")?;
+
+        let instruction =
+            solana_sdk::system_instruction::transfer(&from_pubkey, &to_pubkey, payload.lamports);
+
+        Ok(ApiResponse::Success {
+            success: true,
+            data: SendSolResponse {
+                program_id: instruction.program_id.to_string(),
+                accounts: instruction
+                    .accounts
+                    .iter()
+                    .map(|a| a.pubkey.to_string())
+                    .collect(),
+                instruction_data: general_purpose::STANDARD.encode(&instruction.data),
             },
         })
     })();
