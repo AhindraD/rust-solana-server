@@ -1,5 +1,5 @@
 # Solana Fellowship Assignment – Rust HTTP Server
-
+## https://rust-solana-server.onrender.com/docs/
 ## Overview
 
 Build a **Rust-based HTTP server** exposing **Solana-related endpoints**. The server provides functionality to generate keypairs, handle SPL tokens, sign/verify messages, and construct valid on-chain instructions.
