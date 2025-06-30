@@ -6,7 +6,7 @@ use solana_sdk::{
     signature::{Keypair, Signature, Signer},
 };
 use spl_token::{
-    instruction::{initialize_mint, mint_to},
+    instruction::{initialize_mint, mint_to, transfer},
     solana_program::pubkey::Pubkey,
 };
 use std::str::FromStr;
@@ -393,6 +393,87 @@ pub async fn send_sol(Json(payload): Json<SendSolRequest>) -> impl IntoResponse 
             Json(ApiResponse::<()>::Error {
                 success: false,
                 error: err,
+            }),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct SendTokenRequest {
+    pub destination: String,
+    pub mint: String,
+    pub owner: String,
+    pub amount: u64,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct SendTokenResponse {
+    pub program_id: String,
+    pub accounts: Vec<AccountInfo>,
+    pub instruction_data: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct AccountInfo {
+    pub pubkey: String,
+    pub is_signer: bool,
+}
+
+#[utoipa::path(
+    post,
+    path = "/send/token",
+    request_body = SendTokenRequest,
+    responses(
+        (status = 200, description = "SPL Token transfer instruction", body = ApiResponse<SendTokenResponse>),
+        (status = 400, description = "Invalid input")
+    )
+)]
+pub async fn send_token(Json(payload): Json<SendTokenRequest>) -> impl IntoResponse {
+    let result: Result<ApiResponse<SendTokenResponse>, String> = (|| {
+        let destination =
+            Pubkey::from_str(&payload.destination).map_err(|_| "Invalid destination pubkey")?;
+        let mint = Pubkey::from_str(&payload.mint).map_err(|_| "Invalid mint pubkey")?;
+        let owner = Pubkey::from_str(&payload.owner).map_err(|_| "Invalid owner pubkey")?;
+
+        let instruction = transfer(
+            &spl_token::ID,
+            &mint,
+            &destination,
+            &owner,
+            &[],
+            payload.amount,
+        )
+        .map_err(|e| format!("Failed to build instruction: {e}"))?;
+
+        let accounts = instruction
+            .accounts
+            .iter()
+            .map(|a| AccountInfo {
+                pubkey: a.pubkey.to_string(),
+                is_signer: a.is_signer,
+            })
+            .collect();
+
+        let instruction_data = general_purpose::STANDARD.encode(&instruction.data);
+
+        Ok(ApiResponse::Success {
+            success: true,
+            data: SendTokenResponse {
+                program_id: instruction.program_id.to_string(),
+                accounts,
+                instruction_data,
+            },
+        })
+    })();
+
+    match result {
+        Ok(response) => (StatusCode::OK, Json(response)).into_response(),
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(ApiResponse::<()>::Error {
+                success: false,
+                error,
             }),
         )
             .into_response(),
