@@ -4,7 +4,7 @@ mod routes;
 use axum::{Router, routing::post};
 use dotenv::dotenv;
 use openapi::ApiDoc;
-use routes::{create_token, generate_keypair,mint_token};
+use routes::{create_token, generate_keypair, mint_token, sign_message};
 use std::net::SocketAddr;
 use tracing_subscriber;
 use utoipa::OpenApi;
@@ -27,6 +27,7 @@ async fn main() {
         .route("/keypair", post(generate_keypair))
         .route("/token/create", post(create_token))
         .route("/token/mint", post(mint_token))
+        .route("/message/sign", post(sign_message))
         .merge(SwaggerUi::new("/docs").url("/api-docs/openapi.json", ApiDoc::openapi()));
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();

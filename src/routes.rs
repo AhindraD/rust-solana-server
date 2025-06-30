@@ -18,16 +18,15 @@ use std::str::FromStr;
 use utoipa::ToSchema;
 
 #[derive(Debug, Serialize, ToSchema)]
-pub struct KeypairData {
-    pub pubkey: String,
-    pub secret: String,
-}
-
-#[derive(Debug, Serialize, ToSchema)]
 #[serde(untagged)]
 pub enum ApiResponse<T> {
     Success { success: bool, data: T },
     Error { success: bool, error: String },
+}
+#[derive(Debug, Serialize, ToSchema)]
+pub struct KeypairData {
+    pub pubkey: String,
+    pub secret: String,
 }
 
 #[utoipa::path(
@@ -215,6 +214,67 @@ pub async fn mint_token(Json(payload): Json<MintTokenRequest>) -> impl IntoRespo
             Json(ApiResponse::<()>::Error {
                 success: false,
                 error: err,
+            }),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct SignMessageRequest {
+    pub message: String,
+    pub secret: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct SignMessageResponse {
+    pub signature: String,
+    pub public_key: String,
+    pub message: String,
+}
+#[utoipa::path(
+    post,
+    path = "/message/sign",
+    request_body = SignMessageRequest,
+    responses(
+        (status = 200, description = "Message signed successfully", body = ApiResponse<SignMessageResponse>),
+        (status = 400, description = "Invalid input")
+    )
+)]
+pub async fn sign_message(Json(payload): Json<SignMessageRequest>) -> impl IntoResponse {
+    let result: Result<ApiResponse<SignMessageResponse>, String> = (|| {
+        if payload.message.trim().is_empty() || payload.secret.trim().is_empty() {
+            return Err("Missing required fields".to_string());
+        }
+
+        // Decode base58 secret key (64 bytes expected)
+        let secret_bytes = bs58::decode(&payload.secret)
+            .into_vec()
+            .map_err(|_| "Invalid base58-encoded secret key")?;
+
+        let keypair = Keypair::from_bytes(&secret_bytes)
+            .map_err(|_| "Invalid secret key format (must be 64 bytes)")?;
+
+        let signature = keypair.sign_message(payload.message.as_bytes());
+        let signature_base64 = general_purpose::STANDARD.encode(signature.as_ref());
+
+        Ok(ApiResponse::Success {
+            success: true,
+            data: SignMessageResponse {
+                signature: signature_base64,
+                public_key: keypair.pubkey().to_string(),
+                message: payload.message.clone(),
+            },
+        })
+    })();
+
+    match result {
+        Ok(response) => (StatusCode::OK, Json(response)).into_response(),
+        Err(error) => (
+            StatusCode::BAD_REQUEST,
+            Json(ApiResponse::<()>::Error {
+                success: false,
+                error,
             }),
         )
             .into_response(),
