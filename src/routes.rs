@@ -7,7 +7,7 @@ use base64::{Engine as _, engine::general_purpose};
 use serde::{Deserialize, Serialize};
 use solana_sdk::{
     bs58,
-    signature::{Keypair, Signer},
+    signature::{Keypair, Signature, Signer},
     system_program,
 };
 use spl_token::{
@@ -275,6 +275,65 @@ pub async fn sign_message(Json(payload): Json<SignMessageRequest>) -> impl IntoR
             Json(ApiResponse::<()>::Error {
                 success: false,
                 error,
+            }),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct VerifyMessageRequest {
+    pub message: String,
+    pub signature: String,
+    pub pubkey: String,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct VerifyMessageResponse {
+    pub valid: bool,
+    pub message: String,
+    pub pubkey: String,
+}
+
+#[utoipa::path(
+    post,
+    path = "/message/verify",
+    request_body = VerifyMessageRequest,
+    responses(
+        (status = 200, description = "Verification result", body = ApiResponse<VerifyMessageResponse>),
+        (status = 400, description = "Invalid input")
+    )
+)]
+pub async fn verify_message(Json(payload): Json<VerifyMessageRequest>) -> impl IntoResponse {
+    let result: Result<ApiResponse<VerifyMessageResponse>, String> = (|| {
+        let pubkey = Pubkey::from_str(&payload.pubkey).map_err(|_| "Invalid public key")?;
+
+        let signature_bytes = general_purpose::STANDARD
+            .decode(&payload.signature)
+            .map_err(|_| "Invalid base64 signature")?;
+
+        let signature = Signature::try_from(signature_bytes.as_slice())
+            .map_err(|_| "Failed to parse signature")?;
+
+        let is_valid = signature.verify(pubkey.as_ref(), payload.message.as_bytes());
+
+        Ok(ApiResponse::Success {
+            success: true,
+            data: VerifyMessageResponse {
+                valid: is_valid,
+                message: payload.message.clone(),
+                pubkey: payload.pubkey.clone(),
+            },
+        })
+    })();
+
+    match result {
+        Ok(res) => (StatusCode::OK, Json(res)).into_response(),
+        Err(err) => (
+            StatusCode::BAD_REQUEST,
+            Json(ApiResponse::<()>::Error {
+                success: false,
+                error: err,
             }),
         )
             .into_response(),
