@@ -11,7 +11,7 @@ use solana_sdk::{
     system_program,
 };
 use spl_token::{
-    instruction::initialize_mint,
+    instruction::{initialize_mint, mint_to},
     solana_program::{instruction::Instruction, pubkey::Pubkey},
 };
 use std::str::FromStr;
@@ -138,6 +138,83 @@ pub async fn create_token(Json(payload): Json<CreateTokenRequest>) -> impl IntoR
             Json(ApiResponse::<()>::Error {
                 success: false,
                 error,
+            }),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize, ToSchema)]
+pub struct MintTokenRequest {
+    pub mint: String,
+    pub destination: String,
+    pub authority: String,
+    pub amount: u64,
+}
+
+#[derive(Debug, Serialize, ToSchema)]
+pub struct TokenInstructionResponse {
+    pub program_id: String,
+    pub accounts: Vec<AccountMetaInfo>,
+    pub instruction_data: String,
+}
+
+#[utoipa::path(
+    post,
+    path = "/token/mint",
+    request_body = MintTokenRequest,
+    responses(
+        (status = 200, description = "Created SPL mint-to instruction", body = ApiResponse<TokenInstructionResponse>),
+        (status = 400, description = "Invalid request")
+    )
+)]
+pub async fn mint_token(Json(payload): Json<MintTokenRequest>) -> impl IntoResponse {
+    let result: Result<ApiResponse<TokenInstructionResponse>, String> = (|| {
+        let mint = Pubkey::from_str(&payload.mint).map_err(|_| "Invalid mint pubkey")?;
+        let dest =
+            Pubkey::from_str(&payload.destination).map_err(|_| "Invalid destination pubkey")?;
+        let authority =
+            Pubkey::from_str(&payload.authority).map_err(|_| "Invalid authority pubkey")?;
+
+        let instruction = mint_to(
+            &spl_token::ID,
+            &mint,
+            &dest,
+            &authority,
+            &[],
+            payload.amount,
+        )
+        .map_err(|e| format!("Failed to build instruction: {e}"))?;
+
+        let accounts = instruction
+            .accounts
+            .into_iter()
+            .map(|meta| AccountMetaInfo {
+                pubkey: meta.pubkey.to_string(),
+                is_signer: meta.is_signer,
+                is_writable: meta.is_writable,
+            })
+            .collect();
+
+        let encoded_data = general_purpose::STANDARD.encode(&instruction.data);
+
+        Ok(ApiResponse::Success {
+            success: true,
+            data: TokenInstructionResponse {
+                program_id: instruction.program_id.to_string(),
+                accounts,
+                instruction_data: encoded_data,
+            },
+        })
+    })();
+
+    match result {
+        Ok(res) => (StatusCode::OK, Json(res)).into_response(),
+        Err(err) => (
+            StatusCode::BAD_REQUEST,
+            Json(ApiResponse::<()>::Error {
+                success: false,
+                error: err,
             }),
         )
             .into_response(),
